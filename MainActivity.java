@@ -1,137 +1,155 @@
-package com.example.assignment;
+package com.example.my_application;
 
-import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.os.Bundle;
+import android.os.Environment;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
+import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.TextView;
-import android.widget.Button;
-import android.view.View.OnClickListener;
+import android.widget.Toast;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener, StepListener  {
-    private StepDetector simpleStepDetector;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class MainActivity extends AppCompatActivity
+        implements SensorEventListener {
+
+    private static final int MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE = 1;
     private SensorManager sensorManager;
-    private Sensor accel, linearaccelerometer;
-    private static final String TEXT_NUM_STEPS = "Number of Steps: ";
-    private static final float NS2S = 1.0f / 1000000000.0f;
-    private int numSteps;
-    private long timeprev = 0;
-    private float distance;
-    TextView TvSteps, TvVelDis;
-    Button BtnStart, BtnStop;
+    private Sensor accelerometer;
+    TextView  textViewTimeStamp, textViewX, textViewY, textViewZ;
+    EditText editTextFileName;
+
+    List<AcceleroData> acceleroDataList = new ArrayList<>();
+    boolean capturingData = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+//        textView = findViewById(R.id.textView);
+        textViewTimeStamp = findViewById(R.id.textViewTimeStamp);
+        textViewX = findViewById(R.id.textViewX);
+        textViewY = findViewById(R.id.textViewY);
+        textViewZ = findViewById(R.id.textViewZ);
+        editTextFileName = findViewById(R.id.editTextViewFile);
 
-        // Get an instance of the SensorManager
-        sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-        accel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        linearaccelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
-        simpleStepDetector = new StepDetector();
-        simpleStepDetector.registerListener(this);
-
-        TvSteps = (TextView) findViewById(R.id.tv_steps);
-        TvVelDis = (TextView) findViewById(R.id.tv_veldis);
-        BtnStart = (Button) findViewById(R.id.btn_start);
-        BtnStop = (Button) findViewById(R.id.btn_stop);
-
-
-        BtnStart.setOnClickListener(new OnClickListener() {
-
-            @Override
-            public void onClick(View arg0) {
-
-                numSteps = 0;
-                distance = 0;
-                sensorManager.registerListener(MainActivity.this, accel, SensorManager.SENSOR_DELAY_FASTEST);
-                sensorManager.registerListener(MainActivity.this, linearaccelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-
-            }
-        });
-
-
-        BtnStop.setOnClickListener(new OnClickListener() {
-
-            @Override
-            public void onClick(View arg0) {
-
-                sensorManager.unregisterListener(MainActivity.this);
-
-            }
-        });
-
-
-
-    }
-
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }
-
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            simpleStepDetector.updateAccel(
-                    event.timestamp, event.values[0], event.values[1], event.values[2]);
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null) {
+            accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
         }
 
-        if (event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
-            float dT = 0;
-            if(timeprev != 0){
-                dT = (event.timestamp - timeprev)*NS2S;
-            }
-            timeprev  = event.timestamp;
-
-            float x, y, z;
-            float vx, vy,vz;
-
-            x = event.values[0];
-            y = event.values[1];
-            z = event.values[2];
-
-            float normal = (float)Math.sqrt(x * x + y * y + z * z);
-
-            if(normal < 1){
-                //then it is random noise, ignore
-                vx = 0;
-                vy = 0;
-                vz = 0;
-            }
-            else{
-                vx = x*dT;
-                vy = y*dT;
-                vz = z*dT;
-            }
+    }
 
 
-            float speed = (float) (Math.sqrt(vx*vx + vy*vy + vz*vz)) ;
-            distance += speed*dT;
+    @Override
+    public void onSensorChanged(SensorEvent sensorEvent) {
+        if (capturingData && sensorEvent.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            final float x, y, z;
+            x = sensorEvent.values[0];
+            y = sensorEvent.values[1];
+            z = sensorEvent.values[2];
 
-            final String textData;
-            textData = String.format("Speed=%.3fm/s Distance=%.3fm ",speed,distance);
-            TvVelDis.setText(textData);
+            final long timeStamp = System.currentTimeMillis();
 
+            acceleroDataList.add(new AcceleroData(timeStamp, x, y, z));
+            final String textData = String.format("t=%d x=%f y=%f z=%f", timeStamp, x, y, z);
+
+            Log.v("Accelerometer", textData);
+
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+//                    textView.setText(textData);
+                    textViewTimeStamp.setText(Long.toString(timeStamp));
+                    textViewX.setText(Float.toString(x));
+                    textViewY.setText(Float.toString(y));
+                    textViewZ.setText(Float.toString(z));
+                }
+
+            });
         }
     }
 
     @Override
-    public void step(long timeNs) {
-        numSteps++;
-        TvSteps.setText(TEXT_NUM_STEPS + numSteps);
+    public void onAccuracyChanged(Sensor sensor, int i) {
+
+    }
+
+    public void onStartClick(View view) {
+        acceleroDataList = new ArrayList<>();
+        capturingData = true;
+
+    }
+
+    public void onStopClick(View view) {
+        capturingData = false;
+    }
+
+    String fileName;
+
+    public void onSaveClick(View view) {
+        fileName = editTextFileName.getText().toString();
+        if (fileName == null) {
+            Toast.makeText(this, "Please enter the file name", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, MY_PERMISSIONS_REQUEST_WRITE_EXTERNAL_STORAGE);
+        } else {
+            generateNoteOnSD(this, fileName, GetStringValueFromList(acceleroDataList));
+            acceleroDataList = new ArrayList<>();
+        }
+
+    }
+
+    public void generateNoteOnSD(Context context, String sFileName, String sBody) {
+        try {
+            File root = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "AccelerometerData");
+            if (!root.exists()) {
+                root.mkdirs();
+            }
+            File gpxfile = new File(root, sFileName + ".csv");
+            FileWriter writer = new FileWriter(gpxfile);
+            writer.append(sBody);
+            writer.flush();
+            writer.close();
+            Toast.makeText(context, "Saved to " + gpxfile.getAbsolutePath(), Toast.LENGTH_LONG).show();
+            Log.e("save to", gpxfile.getAbsolutePath());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public String GetStringValueFromList(List<AcceleroData> data) {
+        String s = "t X Y Z  %data formate";
+        for (AcceleroData accelerationData : data) {
+            s += accelerationData.toString() + "\n";
+        }
+        return s;
     }
 
     @Override
-    public void velanddis(float vel_t, float dis_t) {
-        final String textData;
-        textData = String.format("Speed=%.3fm/s Distance=%.3fm",vel_t, dis_t);
-        TvVelDis.setText(textData);
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        generateNoteOnSD(this, fileName, GetStringValueFromList(acceleroDataList));
+
+        acceleroDataList = new ArrayList<>();
     }
+
 
 }
